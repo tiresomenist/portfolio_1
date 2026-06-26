@@ -18,19 +18,23 @@ public class GameManager : MonoBehaviour
     public int CurrentGold => currentGold;
     public int PlayerHP => playerHP;
     public int CurrentNodeIndex => currentNodeIndex;
+    //C#에서 제공하는 읽기전용 리스트
     public IReadOnlyList<RelicData> OwnedRelics => ownedRelics;
     public IReadOnlyList<UnitData> OwnedUnits => ownedUnits;
 
     private void Awake()
     {
+        //싱글톤 패턴으로 구현
+        //새로생긴 복사본은 파괴하고 즉시 종료한다.
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-
         Instance = this;
+        //씬이 변경되더라도 데이터가 지워지지 않음.
         DontDestroyOnLoad(gameObject);
+        
     }
 
     public void AddGold(int amount)

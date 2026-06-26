@@ -13,3 +13,8 @@ MonoBehaviour:
   m_Name: Unit_Drum
   m_EditorClassIdentifier: 
   unitName: "\uB4DC\uB7FC"
+  unitSprite: {fileID: -2413806693520163455, guid: 166b05baa8e7b5d4192525da039522ec, type: 3}
+  baseHP: 100
+  baseAttackDamage: 15
+  baseAttackSpeed: 1
+  baseAttackRange: 1

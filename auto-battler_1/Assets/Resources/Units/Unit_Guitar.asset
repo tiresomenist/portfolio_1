@@ -13,3 +13,8 @@ MonoBehaviour:
   m_Name: Unit_Guitar
   m_EditorClassIdentifier: 
   unitName: "\uAE30\uD0C0"
+  unitSprite: {fileID: 7482667652216324306, guid: 58393927758b87f4dad077b359cc091b, type: 3}
+  baseHP: 100
+  baseAttackDamage: 15
+  baseAttackSpeed: 1
+  baseAttackRange: 1
