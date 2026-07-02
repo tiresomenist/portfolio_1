@@ -7,6 +7,8 @@ using UnityEngine;
 /// </summary>
 public class UnitPlacement : MonoBehaviour
 {
+    public static UnitPlacement Instance { get; private set; }
+
     public static bool IsBattleActive { get; private set; } = false;
 
     [Header("Interactive Setup")]
@@ -26,6 +28,13 @@ public class UnitPlacement : MonoBehaviour
 
     private void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+
         InitializeBenchSlots();
     }
 
@@ -91,23 +100,8 @@ public class UnitPlacement : MonoBehaviour
 
     private void Update()
     {
-        if (IsBattleActive)
-        {
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                StopSimulationAndReset();
-            }
-            return;
-        }
-
         // 정비 상태일 때의 마우스 드래그앤드롭 작동
         HandlePlacementDrag();
-
-        // 스페이스바 누르면 가상 전투 시뮬레이션 개시 (FSM 트리거 가동)
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            StartBattleSimulation();
-        }
     }
 
     private void HandlePlacementDrag()
@@ -204,6 +198,10 @@ public class UnitPlacement : MonoBehaviour
             }
 
             draggingUnit = null;
+        }
+        if (SynergyManager.Instance != null)
+        {
+            SynergyManager.Instance.RefreshSynergies(); // 배치가 바뀌었으니 시너지와 앞/뒷줄 보너스 전면 재정산!
         }
     }
 
@@ -304,48 +302,82 @@ public class UnitPlacement : MonoBehaviour
         }
     }
 
-    public void StartBattleSimulation()
+    public void StartSimulationDirect()
     {
-        IsBattleActive = true;
-        Debug.Log("<color=#FFD700>🔊 [전투 개시] 스페이스바가 입력되었습니다. 유닛들의 FSM 지능과 탐색기가 가동됩니다!</color>");
+        StartBattleSimulation();
     }
 
-    public void StopSimulationAndReset()
+    public void StopSimulationAndResetDirect()
     {
-        IsBattleActive = false;
-        Debug.Log("<color=#ADD8E6>🔄 [정비 모드 복귀] ESC 키가 감지되었습니다. 모든 유닛이 부활하며 최초 배치 위치로 되돌아갑니다.</color>");
+        StopSimulationAndReset();
+    }
 
-        UnitInstance[] allUnits = FindObjectsOfType<UnitInstance>();
+    private void StartBattleSimulation()
+    {
+        if (IsBattleActive) return;
+        IsBattleActive = true;
+
+        UnitInstance[] allUnits = FindObjectsByType<UnitInstance>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         foreach (var unit in allUnits)
         {
             if (unit != null)
             {
-
-                unit.gameObject.SetActive(true);
-
-                if (unit.TryGetComponent(out UnitCombat c)) c.ResetCombatTarget();
-                
-                unit.InitializeFromData();
-                if (unit.CurrentCell != null)
-                {
-                    unit.transform.position = unit.CurrentCell.worldPosition;
-                }
-                else
-                {
-                    // 벤치 소속 복귀
-                    int benchIdx = benchSlots.IndexOf(unit);
-                    if (benchIdx != -1)
-                    {
-                        unit.transform.position = benchWorldPositions[benchIdx];
-                    }
-                    else
-                    {
-                        // ★ [이 부분 추가] 격자 셀도 없고 벤치에도 없는 유닛(수동 배치 적군 등)은 최초 배치 좌표로 복구!
-                        unit.transform.position = unit.InitialPosition;
-                    }
-                }
+                // ★ [추가] 전투 시작 전, 현재 밟고 있는 완벽한 타일 주소를 영구 박제시킵니다!
+                unit.RecordBattleStartPosition();
             }
         }
+
+        Debug.Log("<color=#FFD700>🔊 [전투 개시] 스페이스바가 입력되었습니다. 유닛들의 FSM 지능과 탐색기가 가동됩니다!</color>");
+    }
+
+    private void StopSimulationAndReset()
+    {
+        IsBattleActive = false;
+
+        // 유니티 표준 API를 사용해 꺼져있는 유닛까지 씬에서 전수 조사합니다.
+        // FindObjectsSortMode.None을 주어 성능 최적화와 비활성 오브젝트 수집을 동시에 달성합니다.
+        UnitInstance[] allUnits = FindObjectsByType<UnitInstance>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None
+        );
+
+        Debug.Log($"[리셋 시동] 씬에서 발견된 총 유닛 수(사망 포함): {allUnits.Length}마리");
+
+        foreach (var unit in allUnits)
+        {
+            // 프리팹 에셋 유실이나 찌꺼기 방어선
+            if (unit == null) continue;
+
+            // 1. 꺼져있던 사망 유닛들의 불을 먼저 켭니다.
+            unit.gameObject.SetActive(true);
+
+            // 2. 컴뱃 컴포넌트 타겟팅 정보 및 코루틴 완벽 클린업
+            if (unit.TryGetComponent(out UnitCombat c))
+            {
+                c.ResetCombatTarget();
+            }
+
+            // 3. 체력 풀피 복구 및 FSM 상태 초기화 (ReviveAndReset)
+            unit.ReviveAndReset();
+
+            // 4. ★ [위치 복구 보장] 시작 전 기억해둔 원래 격자 타일 포지션으로 강제 텔레포트
+            if (unit.CurrentCell != null)
+            {
+                unit.transform.position = unit.CurrentCell.worldPosition;
+                unit.CurrentCell.isOccupied = true;
+                Debug.Log($"🔄 {unit.UnitName} -> 원래 타일 위치({unit.CurrentCell.gridPosition.x}, {unit.CurrentCell.gridPosition.y})로 복구 완료.");
+            }
+            else
+            {
+                // 배틀 존 타일이 없는 벤치 유닛 포지션 복구
+                unit.InitializeFromData();
+            }
+        }
+        if (SynergyManager.Instance != null)
+        {
+            SynergyManager.Instance.RefreshSynergies();
+        }
+        Debug.Log("<color=yellow>🔄 [전투 리셋 완료] 모든 유닛이 부활하고 원본 배치 자리로 복귀했습니다.</color>");
     }
 
     private void OnDrawGizmos()

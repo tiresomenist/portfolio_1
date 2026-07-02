@@ -1,69 +1,101 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using UnityEngine.UI;
+using System.Collections.Generic;
 
 /// <summary>
-/// À¯´ÖÀÇ ½Ç½Ã°£ ´É·ÂÄ¡(HP, °ø°İ·Â, »ç°Å¸® µî)¿Í µ¥ÀÌÅÍ µ¿±âÈ­¸¦ ´ã´çÇÏ´Â ÄÄÆ÷³ÍÆ®
+/// ìœ ë‹›ì˜ ì‹¤ì‹œê°„ ëŠ¥ë ¥ì¹˜(HP, ê³µê²©ë ¥, ì‚¬ê±°ë¦¬ ë“±)ì™€ ë°ì´í„° ë™ê¸°í™”ë¥¼ ë‹´ë‹¹í•˜ëŠ” ì»´í¬ë„ŒíŠ¸
 /// </summary>
 [RequireComponent(typeof(UnitFSM))]
 public class UnitInstance : MonoBehaviour
 {
     [Header("Unit Profile Reference")]
-    [SerializeField] private UnitData unitData; // ScriptableObject ¼³°èµµ ¿øº»
+    [SerializeField] private UnitData unitData; // ScriptableObject ì„¤ê³„ë„ ì›ë³¸
 
     [Header("Runtime Live Stats")]
     [SerializeField] private bool isPlayerSide = true;
-    [SerializeField] private int maxHP;
     [SerializeField] private int currentHP;
-    [SerializeField] private int currentAttackDamage;
-    [SerializeField] private float currentAttackSpeed;
     [SerializeField] private int currentAttackRange;
+    [SerializeField] private int maxMana = 100;
+    [SerializeField] private int currentMana = 0;
 
-    // Ä³½Ì ÄÄÆ÷³ÍÆ® ÂüÁ¶
+    [Header("ë…ë¦½í˜• Stat")]
+    private Stat maxHpStat;                     // ìµœëŒ€ ì²´ë ¥ ê´€ë¦¬ ê°ì²´
+    private Stat attackDamageStat;              // ê³µê²©ë ¥ ê´€ë¦¬ ê°ì²´
+    private Stat attackSpeedStat;               // ê³µê²© ì†ë„ ê´€ë¦¬ ê°ì²´
+    private Stat defenseStat;                   // ë°©ì–´ë ¥ ê´€ë¦¬ ê°ì²´
+    private Stat dmgReductionPercentStat;       // ë°›ëŠ” í”¼í•´ ê°ì†Œ % ê´€ë¦¬ ê°ì²´
+    private Stat dmgReductionFlatStat;          // ë°›ëŠ” í”¼í•´ ê³ ì •ì¹˜ ê´€ë¦¬ ê°ì²´
+
+    [Header("Battle Reset Backup")]
+    private GridCell battleStartCell; // â˜… ì „íˆ¬ ì‹œì‘ ì‹œì ì˜ íƒ€ì¼ì„ ê¸°ì–µí•  ì˜êµ¬ ì €ì¥ì†Œ
+
+    // â˜… [ì¶”ê°€] ë§¤í”„ë ˆì„ ì¤‘ë³µ ë¡œê·¸ ë° ìŠ¤íƒ¯ ê°€ì‚°ì„ ë§‰ê¸° ìœ„í•œ ë½(Lock) ë³€ìˆ˜
+    private int lastEvaluatedY = -1;
+
+
+    // ìºì‹± ì»´í¬ë„ŒíŠ¸ ì°¸ì¡°
     private UnitFSM fsm;
     private GridCell assignedCell;
     private SpriteRenderer spriteRenderer;
 
-    // µ¿Àû ¿ùµå ½ºÆäÀÌ½º HP¹Ù UI ½½¶óÀÌ´õ
+    // ë™ì  ì›”ë“œ ìŠ¤í˜ì´ìŠ¤ HPë°” UI ìŠ¬ë¼ì´ë”
     private Slider hpSlider;
 
-    //½ÃÀÛ Æ÷Áö¼Ç ¹é¾÷
+    //ì‹œì‘ í¬ì§€ì…˜ ë°±ì—…
     private Vector3 initialPosition;
 
-    // ¿ÜºÎ ¿¬µ¿¿ë ¾ÈÀüÇÑ °ÔÅÍ ÇÁ·ÎÆÛÆ¼
+    // ì™¸ë¶€ ì—°ë™ìš© ì•ˆì „í•œ ê²Œí„° í”„ë¡œí¼í‹°
     public string UnitName
     {
         get
         {
-            // À¯´Ö ¼³°èµµ ¿øº» ÀÌ¸§ (±âÅ¸, µå·³ µî)
+            // ìœ ë‹› ì„¤ê³„ë„ ì›ë³¸ ì´ë¦„ (ê¸°íƒ€, ë“œëŸ¼ ë“±)
             string rawName = unitData != null ? unitData.unitName : "Unknown";
 
-            // À¯´ÏÆ¼ ¿ÀºêÁ§Æ®¸¶´Ù ºÎ¿©µÇ´Â °íÀ¯ ÇØ½Ã ID°ª ÃßÃâ (¿¹: 2541, 4812)
+            // ìœ ë‹ˆí‹° ì˜¤ë¸Œì íŠ¸ë§ˆë‹¤ ë¶€ì—¬ë˜ëŠ” ê³ ìœ  í•´ì‹œ IDê°’ ì¶”ì¶œ
             int uniqueId = gameObject.GetInstanceID();
-            // °¡µ¶¼ºÀ» À§ÇØ ¾ç¼ö 4ÀÚ¸® Á¤µµ·Î ½½¶óÀÌ½Ì
+            
+            // ê°€ë…ì„±ì„ ìœ„í•´ ì–‘ìˆ˜ 4ìë¦¬ ì •ë„ë¡œ ìŠ¬ë¼ì´ì‹±
             string shortId = Mathf.Abs(uniqueId % 10000).ToString("D4");
 
             if (isPlayerSide)
             {
-                // ¾Æ±ºÀº ÆÄ¶õ °è¿­(Cyan)·Î [¾Æ±º_±âÅ¸#1254] ÇüÅÂ Ãâ·Â
-                return $"<color=#00FFFF>[¾Æ±º_{rawName}#{shortId}]</color>";
+                return $"<color=#00FFFF>[ì•„êµ°_{rawName}#{shortId}]</color>";
             }
             else
             {
-                // Àû±ºÀº ºÓÀº °è¿­(Light Red)·Î [Àû±º_µå·³#9512] ÇüÅÂ Ãâ·Â
-                return $"<color=#FF6B6B>[Àû±º_{rawName}#{shortId}]</color>";
+                return $"<color=#FF6B6B>[ì êµ°_{rawName}#{shortId}]</color>";
             }
         }
     }
-    public int AttackDamage => currentAttackDamage;
-    public float AttackSpeed => currentAttackSpeed;
+
+    public void RecordBattleStartPosition()
+    {
+        battleStartCell = CurrentCell;
+    }
+
+
+    public int AttackDamage => attackDamageStat != null ? Mathf.RoundToInt(attackDamageStat.GetFinalValue()) : (unitData != null ? unitData.baseAttackDamage : 0);
+    public float AttackSpeed => attackSpeedStat != null ? attackSpeedStat.GetFinalValue() : (unitData != null ? unitData.baseAttackSpeed : 1.0f);
+    public int MaxHP => maxHpStat != null ? Mathf.RoundToInt(maxHpStat.GetFinalValue()) : (unitData != null ? unitData.baseHP : 100);
+    public int Defense => defenseStat != null ? Mathf.RoundToInt(defenseStat.GetFinalValue()) : (unitData != null ? unitData.baseDefense : 10);
+  
     public int AttackRange => currentAttackRange;
     public int CurrentHP => currentHP;
-    public int MaxHP => maxHP;
     public bool IsPlayerSide => isPlayerSide;
     public bool IsDead => currentHP <= 0;
     public GridCell CurrentCell => assignedCell;
     public Vector3 InitialPosition => initialPosition;
-
+    public Projectile ProjectilePrefab => unitData != null ? unitData.projectilePrefab : null;
+    public int CurrentMana => currentMana;
+    public int MaxMana => maxMana;
+    public SkillType UnitSkillType => unitData != null ? unitData.skillType : SkillType.SingleDamage;
+    public float SkillValue => unitData != null ? unitData.skillValue : 0f;
+    public float SkillRadius => unitData != null ? unitData.skillRadius : 2.0f;
+    public ParticleSystem SkillEffectPrefab => unitData != null ? unitData.skillEffectPrefab : null;
+    public List<UnitGenre> GenresList => unitData != null ? unitData.unitGenres : new List<UnitGenre>();
+    public List<UnitClass> ClassesList => unitData != null ? unitData.unitClasses : new List<UnitClass>();
+    
     private void Awake()
     {
         fsm = GetComponent<UnitFSM>();
@@ -83,19 +115,28 @@ public class UnitInstance : MonoBehaviour
     }
 
     /// <summary>
-    /// ScriptableObject ¿¡¼Â µ¥ÀÌÅÍ¸¦ ÀĞ¾î¿Í ½Ç½Ã°£ ´É·ÂÄ¡ ¹öÆÛ¿¡ ´ëÀÔÇÕ´Ï´Ù.
+    /// ScriptableObject ì—ì…‹ ë°ì´í„°ë¥¼ ì½ì–´ì™€ ì‹¤ì‹œê°„ ëŠ¥ë ¥ì¹˜ ë²„í¼ì— ëŒ€ì…í•©ë‹ˆë‹¤.
     /// </summary>
     public void InitializeFromData()
     {
         if (unitData != null)
         {
-            maxHP = unitData.baseHP;
-            currentHP = maxHP;
-            currentAttackDamage = unitData.baseAttackDamage;
-            currentAttackSpeed = unitData.baseAttackSpeed;
-            currentAttackRange = unitData.baseAttackRange;
+            maxHpStat = new Stat(unitData.baseHP);
+            attackDamageStat = new Stat(unitData.baseAttackDamage);
+            attackSpeedStat = new Stat(unitData.baseAttackSpeed);
+            defenseStat = new Stat(unitData.baseDefense);
 
-            // ¸í¼¼¼­¿¡ ÀÖ´Â ½ºÇÁ¶óÀÌÆ® ºñÁÖ¾ó ÀÚµ¿ µ¿±âÈ­
+            dmgReductionPercentStat = new Stat(0f);
+            dmgReductionFlatStat = new Stat(0f);
+
+            lastEvaluatedY = -1;
+
+            currentHP = MaxHP;
+            currentAttackRange = unitData.baseAttackRange;
+            maxMana = unitData.baseMaxMana;
+            currentMana = 0;
+
+            // ëª…ì„¸ì„œì— ìˆëŠ” ìŠ¤í”„ë¼ì´íŠ¸ ë¹„ì£¼ì–¼ ìë™ ë™ê¸°í™”
             if (unitData.unitSprite != null && spriteRenderer != null)
             {
                 spriteRenderer.sprite = unitData.unitSprite;
@@ -103,20 +144,23 @@ public class UnitInstance : MonoBehaviour
         }
         else
         {
-            // µ¥ÀÌÅÍ ´©¶ô ½Ã ¿ÀÀÛµ¿ ¹æÁö¿ë ¾ÈÀü µğÆúÆ®°ª ¼³Á¤
-            maxHP = 100;
-            currentHP = maxHP;
-            currentAttackDamage = 15;
-            currentAttackSpeed = 1.0f;
-            currentAttackRange = 1;
+            // ë°ì´í„° ëˆ„ë½ ì‹œ ì˜¤ì‘ë™ ë°©ì§€ìš© ì•ˆì „ ë””í´íŠ¸ê°’ ì„¤ì •
+            maxHpStat = new Stat(100);
+            attackDamageStat = new Stat(15);
+            attackSpeedStat = new Stat(1.0f);
+            defenseStat = new Stat(10);
+            dmgReductionPercentStat = new Stat(0f);
+            dmgReductionFlatStat = new Stat(0f);
+            currentHP = MaxHP;
         }
 
         fsm.SetInitialState();
+       
         UpdateHPBarUI();
     }
 
     /// <summary>
-    /// ¿µÅä ¹èÁ¤ ¹× ÁÂÇ¥ ½º³ÀÇÎÀ» Á¦¾îÇÕ´Ï´Ù.
+    /// ì˜í†  ë°°ì • ë° ì¢Œí‘œ ìŠ¤ëƒ…í•‘ì„ ì œì–´í•©ë‹ˆë‹¤.
     /// </summary>
     public void AssignToCell(GridCell cell)
     {
@@ -130,24 +174,38 @@ public class UnitInstance : MonoBehaviour
         if (assignedCell != null)
         {
             assignedCell.isOccupied = true;
-            transform.position = assignedCell.worldPosition; // ÀüÀåÀÇ ¼¿ Áß½ÉÁ¡À¸·Î ÀÚ¼® Á¤·Ä ½º³À
+            transform.position = assignedCell.worldPosition; // ì „ì¥ì˜ ì…€ ì¤‘ì‹¬ì ìœ¼ë¡œ ìì„ ì •ë ¬ ìŠ¤ëƒ…
         }
     }
 
     /// <summary>
-    /// ½Ç½Ã°£ ´ë¹ÌÁö ¿¬»ê±â ¹× UI µ¿±âÈ­
+    /// ì‹¤ì‹œê°„ ëŒ€ë¯¸ì§€ ì—°ì‚°ê¸° ë° UI ë™ê¸°í™”
     /// </summary>
     public void TakeDamage(int damage)
     {
         if (IsDead) return;
 
-        int previousHP = currentHP;
+        // [1ë‹¨ê³„: ë°©ì–´ë ¥ ê³µì‹ ì ìš©] (ë°©ì–´ë ¥ 1ë‹¹ ìœ íš¨ ì²´ë ¥ 1% ì •ë¹„ë¡€ ì¦ê°€)
+        float currentDef = Mathf.Max(0f, defenseStat.GetFinalValue());
+        float armorMultiplier = 100f / (100f + currentDef);
+        float step1Damage = damage * armorMultiplier;
 
-        currentHP -= damage;
-        currentHP = Mathf.Clamp(currentHP, 0, maxHP);
+        // [2ë‹¨ê³„: ë°›ëŠ” í”¼í•´ ê°ì†Œ % ì ìš© (ê³±ì—°ì‚°)]
+        float dmgRedPercent = Mathf.Clamp(dmgReductionPercentStat.GetFinalValue(), 0f, 0.9f); // ìµœëŒ€ 90% ê°ë©´ ê°€ë“œë¼ì¸
+        float step2Damage = step1Damage * (1.0f - dmgRedPercent);
+
+        // [3ë‹¨ê³„: ë°›ëŠ” í”¼í•´ ê³ ì •ì¹˜ ì°¨ê° ë° ìµœì†Œ 1 ëŒ€ë¯¸ì§€ ë³´ì¥]
+        float dmgRedFlat = Mathf.Max(0f, dmgReductionFlatStat.GetFinalValue());
+        int finalDamage = Mathf.Max(1, Mathf.RoundToInt(step2Damage - dmgRedFlat));
+
+        // [4ë‹¨ê³„: ì‹¤ì‹œê°„ ì²´ë ¥ ì¸ê°€]
+        int previousHP = currentHP;
+        currentHP = Mathf.Clamp(currentHP - finalDamage, 0, MaxHP);
         UpdateHPBarUI();
 
-        Debug.Log($"[{UnitName}] ´ë¹ÌÁö ¼ö½Å: HP {previousHP} -> {currentHP}");
+        Debug.Log($"[{UnitName}] ëŒ€ë¯¸ì§€ ìˆ˜ì‹ : HP {previousHP} -> {currentHP}");
+
+        GainMana(5);
 
         if (currentHP <= 0)
         {
@@ -160,43 +218,155 @@ public class UnitInstance : MonoBehaviour
         isPlayerSide = isPlayer;
     }
 
+    public void ReviveAndReset()
+    {
+        if (unitData != null)
+        {
+            // ESC ë¦¬ì…‹ì´ë‚˜ ì •ë¹„ì°½ìœ¼ë¡œ ëŒì•„ì˜¬ ë•Œ ëª¨ë“  ë™ì  ì‹¤ì‹œê°„ ì „íˆ¬ ë²„í”„(ìŠ¤í‚¬ ë””ë²„í”„ í¬í•¨) ì²­ì†Œ
+            maxHpStat.RemoveModifiersFromSource(ModifierSource.SkillBuff);
+            attackDamageStat.RemoveModifiersFromSource(ModifierSource.SkillBuff);
+            attackSpeedStat.RemoveModifiersFromSource(ModifierSource.SkillBuff);
+            defenseStat.RemoveModifiersFromSource(ModifierSource.SkillBuff);
+        }
+
+        currentHP = MaxHP;
+        currentMana = 0;
+        UpdateHPBarUI();
+
+        // ì‹œì‘í•  ë•Œ ë°•ì œí•´ë‘” ë‚´ ì›ë˜ ì¢Œí‘œë¡œ ì¦‰ì‹œ ë³µê·€
+        transform.position = initialPosition;
+
+        // CurrentCell ë³€ìˆ˜ ìì²´ë¥¼ ëŒ€ì…í•˜ëŠ” ê²ƒì´ ì•„ë‹ˆë¼,
+        // ë‚´ê°€ ì›ë˜ ë°Ÿê³  ìˆë˜ íƒ€ì¼ì˜ ì ìœ  ë°ì´í„° ìƒíƒœë§Œ ë°ì´í„°ìƒìœ¼ë¡œ trueë¡œ ë³µêµ¬í•©ë‹ˆë‹¤.
+        if (CurrentCell != null)
+        {
+            CurrentCell.isOccupied = true;
+        }
+
+        lastEvaluatedY = -1;
+
+        // FSM ìƒíƒœë„ Idleë¡œ ì•ˆì „í•˜ê²Œ ì´ˆê¸°í™”
+        if (fsm == null) fsm = GetComponent<UnitFSM>();
+        if (fsm != null) fsm.SetInitialState();
+    }
+
+    // â˜… ë§ˆë‚˜ ê°€ì‚° ì²˜ë¦¬ê¸° (ê²Œì´ì§€ê°€ ê°€ë“ ì°¨ë©´ true ë°˜í™˜)
+    public bool GainMana(int amount)
+    {
+        if (IsDead) return false;
+
+        currentMana += amount;
+        currentMana = Mathf.Clamp(currentMana, 0, maxMana);
+
+        // UI ì—°ë™ (ì°¨í›„ ë§ˆë‚˜ë°” UI ì¶”ê°€ ì‹œ ì—°ê³„ ê°€ëŠ¥)
+        Debug.Log($"[{UnitName}] ë§ˆë‚˜ ë³€ë™: {currentMana} / {maxMana} (+{amount})");
+
+        if (currentMana >= maxMana)
+        {
+            return true; // ë§ˆë‚˜ ê°€ë“ ì°¸ ì•Œë¦¼
+        }
+        return false;
+    }
+    // â˜… [ì¶”ê°€] ìŠ¤í‚¬ ì‹œì „ í›„ ë§ˆë‚˜ ì´ˆê¸°í™” ì¥ì¹˜
+    public void UseMana()
+    {
+        currentMana = 0;
+    }
+
+    public void ApplySynergyModifiers(float hpPercent, float atkPercent, float spdPercent)
+    {
+        if (maxHpStat == null || attackDamageStat == null || attackSpeedStat == null) return;
+
+        maxHpStat.RemoveModifiersFromSource(ModifierSource.Synergy);
+        attackDamageStat.RemoveModifiersFromSource(ModifierSource.Synergy);
+        attackSpeedStat.RemoveModifiersFromSource(ModifierSource.Synergy);
+
+        if (hpPercent > 0f) maxHpStat.AddModifier(new StatModifier(hpPercent, ModifierType.Percent, ModifierSource.Synergy));
+        if (atkPercent > 0f) attackDamageStat.AddModifier(new StatModifier(atkPercent, ModifierType.Percent, ModifierSource.Synergy));
+        if (spdPercent > 0f) attackSpeedStat.AddModifier(new StatModifier(spdPercent, ModifierType.Percent, ModifierSource.Synergy));
+        
+        if (UnitPlacement.Instance != null && !UnitPlacement.IsBattleActive)
+        {
+            currentHP = MaxHP;
+        }
+        UpdateHPBarUI();
+    }
+
+    public void ApplyPositionBonus()
+    {
+        if (CurrentCell == null || maxHpStat == null || attackSpeedStat == null) return;
+
+        if (lastEvaluatedY == CurrentCell.gridPosition.y) return;
+
+        lastEvaluatedY = CurrentCell.gridPosition.y;
+
+        // ê¸°ì¡´ ë°°ì¹˜ ë²„í”„ ì²˜ë¦¬
+        maxHpStat.RemoveModifiersFromSource(ModifierSource.PositionBonus);
+        attackSpeedStat.RemoveModifiersFromSource(ModifierSource.PositionBonus);
+
+        int totalRows = 3; // GridManager ì°¸ì¡° ì‹¤íŒ¨ë¥¼ ëŒ€ë¹„í•œ ì•ˆì „ ë””í´íŠ¸ê°’ ë³´ì¥
+        if (GridManager.Instance != null)
+        {
+            // â˜… [íŒ] GridManager ë‚´ë¶€ì— ì•„êµ° ì„¸ë¡œ í¬ê¸°ë¥¼ ë‹´ì•„ë‘” ë³€ìˆ˜ëª…(ì˜ˆ: playerRows ë˜ëŠ” rows)ì— ë§ê²Œ ë§¤í•‘í•´ì¤ë‹ˆë‹¤.
+            totalRows = GridManager.Instance.Height;
+        }
+
+        if (CurrentCell.gridPosition.y >= (totalRows / 2))
+        {
+            // [ì•ì¤„]: ìµœëŒ€ ì²´ë ¥ +15% ìˆ˜ì •ì ì¥ì°©
+            maxHpStat.AddModifier(new StatModifier(0.15f, ModifierType.Percent, ModifierSource.PositionBonus));
+            Debug.Log($"{UnitName} <color=yellow>ğŸ›¡ [ë™ì  ì•ì¤„ íŒì •]</color> (Y:{CurrentCell.gridPosition.y} / ì´ {totalRows}í–‰): ì²´ë ¥ +15% ë²„í”„.");
+        }
+        else
+        {
+            // [ë’·ì¤„]: ê³µê²© ì†ë„ +15% ìˆ˜ì •ì ì¥ì°©
+            attackSpeedStat.AddModifier(new StatModifier(0.15f, ModifierType.Percent, ModifierSource.PositionBonus));
+            Debug.Log($"{UnitName} <color=cyan>âš¡ [ë™ì  ë’·ì¤„ íŒì •]</color> (Y:{CurrentCell.gridPosition.y} / ì´ {totalRows}í–‰): ê³µì† +15% ë²„í”„.");
+        }
+        if (UnitPlacement.Instance != null && !UnitPlacement.IsBattleActive)
+        {
+            currentHP = MaxHP;
+        }
+        UpdateHPBarUI();
+    }
+
     /// <summary>
-    /// ¿¡µğÅÍ ¼öµ¿ UI ÀÛ¾÷À» ¿øÃµ »ı·«ÇÏ°í, ÄÚµå °¡µ¿ ½Ã À¯´Ö ¸Ó¸® À§¿¡ ¿ùµå½ºÆäÀÌ½º HP ½½¶óÀÌ´õ¸¦ ·±Å¸ÀÓ¿¡ µ¿Àû »ı¼ºÇÕ´Ï´Ù.
+    /// ì—ë””í„° ìˆ˜ë™ UI ì‘ì—…ì„ ì›ì²œ ìƒëµí•˜ê³ , ì½”ë“œ ê°€ë™ ì‹œ ìœ ë‹› ë¨¸ë¦¬ ìœ„ì— ì›”ë“œìŠ¤í˜ì´ìŠ¤ HP ìŠ¬ë¼ì´ë”ë¥¼ ëŸ°íƒ€ì„ì— ë™ì  ìƒì„±í•©ë‹ˆë‹¤.
     /// </summary>
     private void CreateWorldSpaceHPBar()
     {
-        // 1. World Space Canvas °ÔÀÓ ¿ÀºêÁ§Æ® »ı¼º
+        // 1. World Space Canvas ê²Œì„ ì˜¤ë¸Œì íŠ¸ ìƒì„±
         GameObject canvasGo = new GameObject("FloatingHPCanvas", typeof(Canvas), typeof(CanvasScaler));
         canvasGo.transform.SetParent(transform);
-        canvasGo.transform.localPosition = new Vector3(0, 0.9f, 0); // ¸Ó¸® À§ ¿ÀÇÁ¼Â
-        canvasGo.transform.localScale = Vector3.one * 0.01f; // ¿ùµå ½ºÆäÀÌ½º ½ºÄÉÀÏ 1/100 ¾ĞÃà
+        canvasGo.transform.localPosition = new Vector3(0, 0.9f, 0); // ë¨¸ë¦¬ ìœ„ ì˜¤í”„ì…‹
+        canvasGo.transform.localScale = Vector3.one * 0.01f; // ì›”ë“œ ìŠ¤í˜ì´ìŠ¤ ìŠ¤ì¼€ì¼ 1/100 ì••ì¶•
 
         Canvas canvas = canvasGo.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.sortingOrder = 5;
 
-        // 2. ½½¶óÀÌ´õ ¹è°æ ÇÃ·¹ÀÌÆ® Æ² »ı¼º
+        // 2. ìŠ¬ë¼ì´ë” ë°°ê²½ í”Œë ˆì´íŠ¸ í‹€ ìƒì„±
         GameObject bgGo = new GameObject("Background", typeof(Image));
         bgGo.transform.SetParent(canvasGo.transform, false);
         RectTransform bgRect = bgGo.GetComponent<RectTransform>();
         bgRect.sizeDelta = new Vector2(80, 12);
         bgGo.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.8f);
 
-        // 3. ½½¶óÀÌ´õ ½Ç½Ã°£ ÇÇ °ÔÀÌÁö »ı¼º (¾Æ±º/Àû±º »ö»ó ºĞ±â)
+        // 3. ìŠ¬ë¼ì´ë” ì‹¤ì‹œê°„ í”¼ ê²Œì´ì§€ ìƒì„± (ì•„êµ°/ì êµ° ìƒ‰ìƒ ë¶„ê¸°)
         GameObject fillGo = new GameObject("Fill", typeof(Image));
         fillGo.transform.SetParent(canvasGo.transform, false);
         RectTransform fillRect = fillGo.GetComponent<RectTransform>();
         fillRect.sizeDelta = new Vector2(80, 12);
         fillGo.GetComponent<Image>().color = isPlayerSide ? Color.green : Color.red;
 
-        // 4. ½½¶óÀÌ´õ ÄÄÆ÷³ÍÆ® ±¸¼º ¿ä¼Ò ºôµå
+        // 4. ìŠ¬ë¼ì´ë” ì»´í¬ë„ŒíŠ¸ êµ¬ì„± ìš”ì†Œ ë¹Œë“œ
         hpSlider = canvasGo.AddComponent<Slider>();
         hpSlider.transition = Slider.Transition.None;
         hpSlider.interactable = false;
         hpSlider.targetGraphic = fillGo.GetComponent<Image>();
         hpSlider.fillRect = fillRect;
 
-        // ÇÇºØ ±âÁØ Á¤·ÄÀ» ÅëÇØ Ã¼·ÂÀÌ ¿ŞÂÊ¿¡¼­ ¿À¸¥ÂÊ ¹æÇâÀ¸·Î Â÷¿À¸£°í °¨¼ÒÇÏ°Ô º¸Á¤
+        // í”¼ë¶• ê¸°ì¤€ ì •ë ¬ì„ í†µí•´ ì²´ë ¥ì´ ì™¼ìª½ì—ì„œ ì˜¤ë¥¸ìª½ ë°©í–¥ìœ¼ë¡œ ì°¨ì˜¤ë¥´ê³  ê°ì†Œí•˜ê²Œ ë³´ì •
         fillRect.anchorMin = new Vector2(0, 0.5f);
         fillRect.anchorMax = new Vector2(0, 0.5f);
         fillRect.pivot = new Vector2(0, 0.5f);
@@ -208,8 +378,9 @@ public class UnitInstance : MonoBehaviour
     {
         if (hpSlider != null)
         {
-            hpSlider.maxValue = maxHP;
+            hpSlider.maxValue = MaxHP;
             hpSlider.value = currentHP;
         }
     }
+
 }

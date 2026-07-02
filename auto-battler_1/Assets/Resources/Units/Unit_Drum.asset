@@ -18,3 +18,12 @@ MonoBehaviour:
   baseAttackDamage: 15
   baseAttackSpeed: 1
   baseAttackRange: 1
+  baseMaxMana: 100
+  baseDefense: 10
+  projectilePrefab: {fileID: 0}
+  skillType: 4
+  skillValue: 2.5
+  skillRadius: 2.5
+  skillEffectPrefab: {fileID: 2253326227723915328, guid: 95e62f652e51b91498715a806465e37c, type: 3}
+  unitGenres: 02000000
+  unitClasses: 01000000

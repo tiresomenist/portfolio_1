@@ -13,6 +13,9 @@ public class UnitFSM : MonoBehaviour
     private UnitInstance selfInstance;
     private UnitCombat combat; // 추가된 컴뱃 매니저 링크
     private Animator animator;
+    private bool isStunned = false; // 행동불가 변수
+    private float stunTimer = 0f;
+
 
     public FsmState CurrentState => currentState;
 
@@ -68,9 +71,27 @@ public class UnitFSM : MonoBehaviour
         }
     }
 
+    // 외부 기절 주입 메서드
+    public void ApplyStun(float duration)
+    {
+        isStunned = true;
+        stunTimer = duration;
+        Debug.Log($"<color=purple>⏳ {selfInstance.UnitName}가 {duration}초간 기절(CC) 상태에 빠졌습니다.</color>");
+    }
+
     private void UpdateStateBehavior()
     {
         if (selfInstance == null) selfInstance = GetComponent<UnitInstance>();
+
+        if (isStunned)
+        {
+            stunTimer -= Time.deltaTime;
+            if (stunTimer <= 0f)
+            {
+                isStunned = false;
+            }
+            return; // 상태 행동 완전 차단
+        }
 
         if (combat == null)
         {
@@ -138,4 +159,6 @@ public class UnitFSM : MonoBehaviour
         }
         gameObject.SetActive(false);
     }
+
+
 }
